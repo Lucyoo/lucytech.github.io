@@ -1,0 +1,246 @@
+<h1 align="center">C#-数据分页查询</h1>
+
+前言：这是我写的第一篇技术文章，目前正在学习C#，还属于基础加强阶段，希望可以通过撰写博客加深自己对于所学知识点的理解，并尽量详细的把自己的学习过程与大家分享，希望能够与大家一起分享交流学习心得。
+
+---------------
+当我们从sql数据库中读取的数据量较多，并需要在页面中展示出来时，在一页上全部显示未免有点冗余，所以为了方便用户查看，可以实现分页浏览的功能，具体需求如下。
+### 需求分析
+> * 从数据库读取数据显示在DataGridView中
+> * 选择显示首页、尾页、上一页、下一页
+
+-----------------------
+### 实现过程分析
+> * 在sql数据库中创建表TblTeacher
+> * 在vs中自定义SqlHelper类，将有关数据库的所有操作均封装进去，让用户在编程时只专注于构造sql语句或者存储过程；
+> * 设计WinForm窗体，向其中添加MenuStrip和DataGridView控件；
+> * 编写MenuStrip各项的点击事件。
+
+#### 1.实现效果
+WinForm窗体每页显示3条数据效果图如下所示：
+
+![首页](https://upload-images.jianshu.io/upload_images/13237207-551b5931b8b552c5.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+![尾页(最后一页条数不够3)](https://upload-images.jianshu.io/upload_images/13237207-3ee27cdc0571e2ab.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+![菜单栏设计](https://upload-images.jianshu.io/upload_images/13237207-d8d5f1ad5b6e2fb5.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+First表示首页；Last表示尾页；Prev表示前一页；Next表示后一页；最后一栏为combox，可由用户选择每页显示的数据条数
+
+#### 2.实现过程
+##### 创建表
+创建表TblTeacher，表中包含tTId（编号）、tTName（姓名）、tTGender（性别）、tTAge（年龄）、tTSalary（薪资）、tTBirthday（生日）6个字段，其中tTId为主键。
+
+![表结构.png](https://upload-images.jianshu.io/upload_images/13237207-f870a18da0f72f10.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240)
+
+##### 封装SqlHelper类
+*  ###### 应用程序配置文件中配置连接字符串
+在使用数据库时，连接字符串需多次使用到，将其写进配置文件中后，在程序中只需通过一句代码就可访问到。在App.config中configuration节点下添加如下代码段：
+```
+    <connectionStrings>
+      <add name="cl" connectionString="Data Source=(local);Initial Catalog=ItCastCn;User ID=sa;Password=123456"/>
+    </connectionStrings>
+```
+* ##### 方法封装
+   * GetConn() 获取数据库连接，返回SqlConnection类型
+   * ExecuteNonQuery(string sql) 执行sql语句，返回受影响的行数int类型
+   * ExecuteNonQuery(string sql, CommandType type, params SqlParameter[] ps) 执行参数化的sql语句或者存储过程，返回受影响的行数int类型
+   * ExecuteScalar(string sql, params SqlParameter[] ps) 执行参数化的sql语句，返回首行首列的值object类型
+   * GetDataTable(string sql, Dictionary<string, string> dic)  执行参数化的sql语句，返回DataTable类型的结果集
+> 数据库操作流程
+
+>* 创建连接字符串
+> * 创建sql语句或者存储过程
+> * 创建sqlcommand或者sqldataadapter对象执行sql语句或存储过程
+> * 获取数据库的返回值
+> * 关闭数据库，释放资源
+
+<pre>
+namespace 分页查询
+{
+    public static class SqlHelper
+    {
+        /// <summary>
+        /// 获取连接
+        /// </summary>
+        /// <returns>返回数据库连接</returns>
+        private static SqlConnection GetConn()
+        {
+            return new SqlConnection(System.Configuration.ConfigurationManager.ConnectionStrings["cl"].ConnectionString);
+        }
+
+        /// <summary>
+        /// 获取受影响的行数,不带参数，执行sql语句
+        /// </summary>
+        /// <returns></returns>
+        public static int ExecuteNonQuery(string sql)
+        {
+            return ExecuteNonQuery(sql, CommandType.Text, null);
+        }
+
+        /// <summary>
+        /// 获取受影响的行数，带参数，选择执行的是存储过程还是普通的sql语句
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <param name="ps"></param>
+        /// <returns></returns>
+        public static int ExecuteNonQuery(string sql, CommandType type, params SqlParameter[] ps)
+        {
+            int rows = -1;
+
+            using (SqlConnection conn = GetConn())
+            {
+                SqlCommand cmd = new SqlCommand(sql, conn);
+                //定义执行语句的类型
+                cmd.CommandType = type;
+                if (ps != null)
+                    cmd.Parameters.AddRange(ps);
+                conn.Open();
+                rows = cmd.ExecuteNonQuery();
+            }
+            return rows;
+        }
+
+        /// <summary>
+        /// 获取首行首列的值
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <param name="ps"></param>
+        /// <returns></returns>
+        public static object ExecuteScalar(string sql, params SqlParameter[] ps)
+        {
+            object obj = null;
+
+            using (SqlConnection conn = GetConn())
+            {
+                SqlCommand cmd = new SqlCommand(sql, conn);
+                if (ps != null)
+                    cmd.Parameters.AddRange(ps);
+                conn.Open();
+                obj = cmd.ExecuteScalar();
+            }
+            return obj;
+        }
+
+        /// <summary>
+        /// 获取一个结果集
+        /// </summary>
+        /// <param name="sql"></param>
+        /// <param name="ps"></param>
+        /// <returns></returns>
+        public static DataTable GetDataTable(string sql, Dictionary<string, string> dic)
+        {
+            DataTable dt = new DataTable();
+
+            using (SqlConnection conn = GetConn())
+            {
+                SqlDataAdapter adapter = new SqlDataAdapter(sql, conn);
+                if (dic != null)
+                {
+                    SqlParameter[] ps = new SqlParameter[dic.Count];
+                    int index = 0;
+                    foreach (var item in dic)
+                    {
+                        ps[index++] = new SqlParameter(item.Key, item.Value);
+                    }
+                    adapter.SelectCommand.Parameters.AddRange(ps);
+                }              
+                conn.Open();
+                adapter.Fill(dt);
+            }
+            return dt;
+        }
+    }
+}
+</pre>
+
+* <h5>控件点击事件</h5>
+
+菜单栏子项点击后的触发事件，通过Text属性判断当前要去第几页。
+
+<pre>
+//填充数据到datagridview
+        private void fillToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            string sql = "select * from Teacher_Index";
+            DataTable dt = SqlHelper.GetDataTable(sql, null);
+            dataGridView1.DataSource = dt;
+        }
+        //当前显示的页码
+        int page_index;
+        //判断选择的是首页、尾页、前一页、后一页
+        private void Page_Click(object sender, EventArgs e)
+        {
+            //根据combox的内容获取一页的行数
+            int page_size = Convert.ToInt32(MS_page_size.Text);
+            //获取总的数据行数
+            int rows = GetCount();
+            //获取能得到的最多的页数
+            int max_rowindex = rows % page_size == 0 ? rows / page_size : rows / page_size + 1;
+            ToolStripMenuItem page = sender as ToolStripMenuItem;
+
+            switch (page.Text)
+            {
+                //首页
+                case "First":
+                    page_index = 1;
+                    break;
+                //尾页
+                case "Last":
+                    page_index = max_rowindex;
+                    break;
+                //前一页
+                case "Prev":
+                    if (page_index <= 1)
+                        //已经是首页
+                        page_index = 1;
+                    else
+                        page_index--;
+                    break;
+                //下一页
+                case "Next":
+                    if (page_index >= max_rowindex)
+                        //已经是尾页
+                        page_index = max_rowindex;
+                    else
+                        page_index++;
+                    break;
+            }
+            //指定dataGridView1的数据源
+            dataGridView1.DataSource = GetData();
+        }
+
+        //获取指定行的数据
+        private DataTable GetData()
+        {
+            int page_size = Convert.ToInt32(MS_page_size.Text);
+            //获取指定列数的内容
+            string sql = "select * from Teacher_Index where row_index between  @startindex and @endindex";
+            //给参数赋值
+            Dictionary<string, string> dic = new Dictionary<string, string>();
+            dic.Add("@startindex", (page_size * (page_index - 1)+1).ToString());
+            dic.Add("@endindex", (page_size * page_index).ToString());
+
+            return SqlHelper.GetDataTable(sql, dic);
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            //初始化显示第一页
+            page_index = 1;
+            //默认每页显示3行数据。因本次试验数据较少，所以选择每页显示3、4、5条数据
+            MS_page_size.SelectedIndex = 0;
+        }
+
+        //获取数据行数
+        private int GetCount()
+        {
+            int rows = 0;
+            //获取表的行数
+            string sql = "select COUNT(*) from Teacher_Index";
+            rows = Convert.ToInt32(SqlHelper.ExecuteScalar(sql, null));
+            return rows;
+        }
+</pre>
+
+#### 3.总结
+至此，已可实现从数据库中读取数据并将其分页浏览，可由用户自定义选择每页显示的数据条数，方便查询。
